@@ -1,0 +1,62 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publicar (leve - precisa do .NET 8 Desktop Runtime)
+        run: dotnet publish SpotifyTB.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist/light
+
+      - name: Publicar (autônomo - não precisa de nada instalado)
+        run: dotnet publish SpotifyTB.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o dist/standalone
+
+      - name: Renomear arquivos
+        shell: pwsh
+        run: |
+          Copy-Item dist/light/SpotifyTB.exe SpotifyTB-win-x64.exe
+          Copy-Item dist/standalone/SpotifyTB.exe SpotifyTB-win-x64-standalone.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpotifyTB
+          path: SpotifyTB-win-x64*.exe
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: SpotifyTB
+
+      - name: Criar release com GitHub CLI
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" SpotifyTB-win-x64*.exe --generate-notes --title "SpotifyTB $env:GITHUB_REF_NAME"
